@@ -21,6 +21,16 @@ A powerful web-based anime downloader with a clean Flask interface for downloadi
 
 See the full [changelog](CHANGELOG.md) for details.
 
+## 🗺️ **Future Roadmap**
+
+Exciting features coming soon! Check out our [development roadmap](ROADMAP.md) for upcoming enhancements including:
+- 🌟 Modern PWA interface with dark/light themes
+- 📥 AI-powered download management and quality selection
+- 🖥️ Plex/Jellyfin integration with automatic metadata
+- 📱 Mobile apps and browser extensions
+- 🤖 Smart recommendations and automation
+- 🔒 Enterprise-grade security and privacy
+
 ---
 
 ## 🔌 Plugin System
