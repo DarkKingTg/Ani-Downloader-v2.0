@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - AnimeKai Downloader</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+</head>
+<body>
+    {% include 'nav.html' %}
+
+    <div class="container">
+        <div class="page-header">
+            <h1>📊 Dashboard</h1>
+            <p class="subtitle">Overview of your anime library</p>
+        </div>
+
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-icon">📁</div>
+                <div class="stat-content">
+                    <div class="stat-value" id="totalAnime">0</div>
+                    <div class="stat-label">Anime Series</div>
+                </div>
+            </div>
+            
+            <div class="stat-card">
+                <div class="stat-icon">🎬</div>
+                <div class="stat-content">
+                    <div class="stat-value" id="totalEpisodes">0</div>
+                    <div class="stat-label">Total Episodes</div>
+                </div>
+            </div>
+            
+            <div class="stat-card">
+                <div class="stat-icon">💾</div>
+                <div class="stat-content">
+                    <div class="stat-value" id="totalSize">0 GB</div>
+                    <div class="stat-label">Total Size</div>
+                </div>
+            </div>
+            
+            <div class="stat-card">
+                <div class="stat-icon">📥</div>
+                <div class="stat-content">
+                    <div class="stat-value" id="activeDownloads">0</div>
+                    <div class="stat-label">Active Downloads</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card card-margin">
+            <h2 class="card-title">📥 Active Downloads</h2>
+            <div id="activeDownloadsList">
+                <div class="empty-state">No active downloads</div>
+            </div>
+        </div>
+
+        <div class="card card-margin">
+            <h2 class="card-title">📚 Recent Downloads</h2>
+            <div id="recentList">
+                <div class="empty-state">Loading...</div>
+            </div>
+        </div>
+
+        <!-- Progress Bar Section -->
+        <div class="card card-margin">
+            <h2 class="card-title">📊 Download Progress</h2>
+            <div id="progressSection">
+                <div class="progress-bar">
+                    <div class="progress" id="progressBar"></div>
+                </div>
+                <p id="progressDetails">0% - 0 KB/s</p>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.5.0/socket.io.min.js"></script>
+    <script src="{{ url_for('static', filename='dashboard.js') }}"></script>
+</body>
+</html>
