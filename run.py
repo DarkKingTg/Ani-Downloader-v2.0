@@ -7,10 +7,9 @@ import sys
 
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
-from app import create_app, socketio
+from app import app, socketio
 
 if __name__ == '__main__':
-    app = create_app()
     
     print("=" * 70)
     print("🎬 AnimeKai Downloader Web Interface")

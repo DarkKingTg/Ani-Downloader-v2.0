@@ -165,6 +165,11 @@
             background: var(--border-color);
         }
 
+        .btn-small {
+            padding: 8px 12px;
+            font-size: 12px;
+        }
+
         .progress-bar {
             width: 100%;
             height: 8px;
@@ -371,10 +376,48 @@
         .toggle-icon.open {
             transform: rotate(180deg);
         }
+
+        .toast-container {
+            position: fixed;
+            right: 16px;
+            bottom: 16px;
+            z-index: 9999;
+            display: grid;
+            gap: 10px;
+            width: min(340px, calc(100vw - 32px));
+        }
+
+        .toast {
+            border-radius: 10px;
+            border: 1px solid var(--border-color);
+            background: var(--surface-color);
+            color: var(--text-color);
+            padding: 10px 12px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+            opacity: 0;
+            transform: translateY(8px);
+            transition: opacity 0.2s ease, transform 0.2s ease;
+            font-size: 0.9rem;
+        }
+
+        .toast.show {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .toast-success {
+            border-color: rgba(16, 185, 129, 0.6);
+        }
+
+        .toast-error {
+            border-color: rgba(239, 68, 68, 0.6);
+        }
+
     </style>
 </head>
 <body>
     {% include 'nav.html' %}
+    <div id="toastContainer" class="toast-container"></div>
 
     <div class="container">
         <div class="page-header">
@@ -389,6 +432,7 @@
                 <div class="form-group">
                     <label for="animeUrl">Anime URL</label>
                     <input type="text" id="animeUrl" placeholder="https://animekai.to/watch/..." required>
+                    <div id="urlInfo" class="job-meta" style="margin-top:8px;">Paste a URL to auto-load available type/server/quality options.</div>
                 </div>
 
                 <div class="form-row">
@@ -437,6 +481,23 @@
                             <option value="Server 2">Server 2</option>
                         </select>
                     </div>
+
+                    <div class="form-group">
+                        <label for="quality">Quality</label>
+                        <select id="quality">
+                            <option value="best">best</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="fps">FPS</label>
+                        <select id="fps">
+                            <option value="best">best</option>
+                            <option value="60">60</option>
+                            <option value="30">30</option>
+                            <option value="24">24</option>
+                        </select>
+                    </div>
                 </div>
 
                 <div class="form-group">
@@ -474,6 +535,13 @@
                                 <label for="keepIndividualFiles">Keep individual files after merging</label>
                             </div>
                         </div>
+
+                        <div class="form-group">
+                            <div class="checkbox-group">
+                                <input type="checkbox" id="usePlugin" checked>
+                                <label for="usePlugin">Use plugin engine (recommended for non-AniKai links)</label>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -501,11 +569,111 @@
         let updateInterval = null;
         const socket = io();
 
+        function showToast(message, type = 'success') {
+            const container = document.getElementById('toastContainer');
+            if (!container) return;
+            const toast = document.createElement('div');
+            toast.className = `toast toast-${type}`;
+            toast.textContent = message;
+            container.appendChild(toast);
+            requestAnimationFrame(() => toast.classList.add('show'));
+            setTimeout(() => {
+                toast.classList.remove('show');
+                setTimeout(() => toast.remove(), 250);
+            }, 2800);
+        }
+
         // Check for URL parameter and pre-fill
         const urlParams = new URLSearchParams(window.location.search);
         const prefilledUrl = urlParams.get('url');
         if (prefilledUrl) {
             document.getElementById('animeUrl').value = prefilledUrl;
+        }
+
+        const urlInfo = document.getElementById('urlInfo');
+        const animeUrlInput = document.getElementById('animeUrl');
+
+        function setSelectOptions(selectId, values, fallbackValue = 'best') {
+            const select = document.getElementById(selectId);
+            const unique = [...new Set((values || []).filter(Boolean))];
+            const previous = select.value;
+            select.innerHTML = '';
+            if (!unique.length) {
+                const option = document.createElement('option');
+                option.value = fallbackValue;
+                option.textContent = fallbackValue;
+                select.appendChild(option);
+                return;
+            }
+            for (const value of unique) {
+                const option = document.createElement('option');
+                option.value = value;
+                option.textContent = value;
+                select.appendChild(option);
+            }
+            select.value = unique.includes(previous) ? previous : unique[0];
+        }
+
+        let infoFetchToken = 0;
+        async function refreshUrlMetadata() {
+            const url = animeUrlInput.value.trim();
+            if (!url) {
+                urlInfo.textContent = 'Paste a URL to auto-load available type/server/quality options.';
+                return;
+            }
+
+            const token = ++infoFetchToken;
+            urlInfo.textContent = 'Loading available options...';
+
+            try {
+                const response = await fetch('/api/download/anime/info', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ anime_url: url })
+                });
+                const data = await response.json();
+                if (token !== infoFetchToken) return;
+
+                if (!response.ok) {
+                    urlInfo.textContent = `Could not load options: ${data.error || 'unknown error'}`;
+                    return;
+                }
+
+                setSelectOptions('preferType', data.available_types || ['Soft Sub', 'Hard Sub', 'Dub (with subs)'], 'Soft Sub');
+                setSelectOptions('preferServer', data.available_servers || ['Server 1', 'Server 2'], 'Server 1');
+                setSelectOptions('quality', data.available_qualities || ['best'], 'best');
+                setSelectOptions('fps', data.available_fps || ['best', '60', '30', '24'], 'best');
+
+                if (data.season !== undefined && data.season !== null) {
+                    document.getElementById('seasonNumber').value = data.season;
+                }
+
+                const total = data.total_episodes || 0;
+                document.getElementById('singleEpisode').value = '1';
+                document.getElementById('startEpisode').value = '1';
+                if (total > 0) {
+                    document.getElementById('endEpisode').value = String(total);
+                    urlInfo.textContent = `Loaded ${total} episode(s) for ${data.title || 'this anime'}.`;
+                } else {
+                    urlInfo.textContent = `Loaded metadata for ${data.title || 'this anime'}.`;
+                }
+            } catch (error) {
+                if (token !== infoFetchToken) return;
+                urlInfo.textContent = `Could not load options: ${error.message}`;
+            }
+        }
+
+        let metadataDebounce = null;
+        function scheduleMetadataRefresh() {
+            clearTimeout(metadataDebounce);
+            metadataDebounce = setTimeout(refreshUrlMetadata, 350);
+        }
+
+        animeUrlInput.addEventListener('input', scheduleMetadataRefresh);
+        animeUrlInput.addEventListener('paste', () => setTimeout(scheduleMetadataRefresh, 20));
+        animeUrlInput.addEventListener('blur', refreshUrlMetadata);
+        if (prefilledUrl) {
+            refreshUrlMetadata();
         }
 
         // Handle download mode change
@@ -545,6 +713,9 @@
                 season_number: parseInt(document.getElementById('seasonNumber').value),
                 merge_episodes: document.getElementById('mergeEpisodes').checked,
                 keep_individual_files: document.getElementById('keepIndividualFiles').checked,
+                quality: document.getElementById('quality').value,
+                fps: document.getElementById('fps').value,
+                use_plugin: document.getElementById('usePlugin').checked,
             };
 
             try {
@@ -559,13 +730,13 @@
                 const data = await response.json();
 
                 if (response.ok) {
-                    alert('✅ Download started! Job ID: ' + data.job_id);
+                    showToast('✅ Download started! Job ID: ' + data.job_id, 'success');
                     startPolling();
                 } else {
-                    alert('❌ Error: ' + data.error);
+                    showToast('❌ Error: ' + data.error, 'error');
                 }
             } catch (error) {
-                alert('❌ Error: ' + error.message);
+                showToast('❌ Error: ' + error.message, 'error');
             } finally {
                 submitBtn.disabled = false;
                 submitBtn.innerHTML = '<span>🚀 Start Download</span>';
@@ -653,6 +824,23 @@
                 `;
             }
 
+            let recoveryHtml = '';
+            if (job.status === 'failed') {
+                const plan = Array.isArray(job.recovery_plan) ? job.recovery_plan : [];
+                recoveryHtml = `
+                    <div style="margin-top:12px;">
+                        <div class="job-meta">🩺 Download Doctor: ${escapeHtml(job.failure_category || 'unknown')}</div>
+                        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;">
+                            ${(plan.length ? plan.slice(0, 3) : [{label: 'Retry with same settings'}]).map((action, index) => `
+                                <button class="btn btn-secondary btn-small" onclick="retryFailedJob(${job.job_id}, ${index})">
+                                    🔁 ${escapeHtml(action.label || 'Retry')}
+                                </button>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+            }
+
             return `
                 <div class="job-item tilt-card" data-job-id="${job.job_id}">
                     <div class="job-header">
@@ -696,10 +884,30 @@
                     ` : ''}
                     
                     ${errorHtml}
+                    ${recoveryHtml}
                     ${filesHtml}
                     ${logsHtml}
                 </div>
             `;
+        }
+
+        async function retryFailedJob(jobId, actionIndex = 0) {
+            try {
+                const response = await fetch(`/api/download/retry/${jobId}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action_index: actionIndex })
+                });
+                const data = await response.json();
+                if (!response.ok) {
+                    showToast('❌ Retry failed: ' + (data.error || 'unknown error'), 'error');
+                    return;
+                }
+                showToast(`✅ Retry started! New Job ID: ${data.job_id}`, 'success');
+                startPolling();
+            } catch (error) {
+                showToast('❌ Retry failed: ' + error.message, 'error');
+            }
         }
 
         function escapeHtml(text) {

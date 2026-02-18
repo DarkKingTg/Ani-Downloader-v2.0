@@ -9,8 +9,9 @@ import importlib
 import inspect
 import logging
 import pkgutil
-from typing import Any, Dict, List, Optional, Type
+from typing import Any, Dict, List, Type
 
+import app.plugins as plugins_pkg
 from app.plugins.base_plugin import BasePlugin
 from app.plugins.generic_plugin import GenericPlugin
 
@@ -22,10 +23,14 @@ class PluginManager:
     def __init__(self) -> None:
         self.plugins: List[BasePlugin] = []
         self.fallback_plugin: BasePlugin = GenericPlugin()
+        self.load_errors: List[str] = []
         self._load_plugins()
 
     def _load_plugins(self) -> None:
-        for m in pkgutil.iter_modules([__import__("app.plugins").plugins.__path__[0]]):
+        self.plugins = []
+        self.load_errors = []
+
+        for m in pkgutil.iter_modules(plugins_pkg.__path__):
             module_name = m.name
             if module_name in {"base_plugin", "generic_plugin", "__init__"}:
                 continue
@@ -35,7 +40,9 @@ class PluginManager:
             try:
                 module = importlib.import_module(f"app.plugins.{module_name}")
             except Exception as e:
-                logger.error("Failed to import plugin module %s: %s", module_name, e)
+                err = f"Failed to import plugin module {module_name}: {e}"
+                logger.error(err)
+                self.load_errors.append(err)
                 continue
 
             for _, obj in inspect.getmembers(module, inspect.isclass):
@@ -45,7 +52,9 @@ class PluginManager:
                 try:
                     plugin_instance = plugin_cls()
                 except Exception as e:
-                    logger.error("Failed to instantiate plugin %s: %s", plugin_cls.__name__, e)
+                    err = f"Failed to instantiate plugin {plugin_cls.__name__}: {e}"
+                    logger.error(err)
+                    self.load_errors.append(err)
                     continue
 
                 if getattr(plugin_instance, "IS_FALLBACK", False):
@@ -68,25 +77,37 @@ class PluginManager:
         plugin = self.get_plugin_for_url(url)
 
         try:
-            return plugin.download(url, output_path, **kwargs)
+            result = plugin.download(url, output_path, **kwargs)
+            result.setdefault("metadata", {})
+            result["metadata"].setdefault("plugin", getattr(plugin, "SITE_NAME", plugin.__class__.__name__))
+            return result
         except Exception as e:
             logger.error("Plugin %s failed: %s", getattr(plugin, "SITE_NAME", plugin.__class__.__name__), e)
 
             if getattr(plugin, "IS_FALLBACK", False):
-                return {"success": False, "files": [], "error": str(e), "metadata": {}}
+                return {"success": False, "files": [], "error": str(e), "metadata": {"plugin": "fallback"}}
 
             try:
-                return self.fallback_plugin.download(url, output_path, **kwargs)
+                result = self.fallback_plugin.download(url, output_path, **kwargs)
+                result.setdefault("metadata", {})
+                result["metadata"].setdefault("plugin", getattr(self.fallback_plugin, "SITE_NAME", "fallback"))
+                result["metadata"]["fallback_used"] = True
+                return result
             except Exception as fallback_error:
-                return {"success": False, "files": [], "error": str(fallback_error), "metadata": {}}
+                return {"success": False, "files": [], "error": str(fallback_error), "metadata": {"plugin": "fallback"}}
 
     def extract_info(self, url: str) -> Dict[str, Any]:
         plugin = self.get_plugin_for_url(url)
         try:
-            return plugin.extract_info(url)
+            info = plugin.extract_info(url)
+            info.setdefault("site", getattr(plugin, "SITE_NAME", plugin.__class__.__name__))
+            return info
         except Exception:
             try:
-                return self.fallback_plugin.extract_info(url)
+                info = self.fallback_plugin.extract_info(url)
+                info.setdefault("site", getattr(self.fallback_plugin, "SITE_NAME", "Fallback"))
+                info["fallback_used"] = True
+                return info
             except Exception:
                 return {"error": "Failed to extract info"}
 
@@ -109,4 +130,7 @@ class PluginManager:
                     "is_fallback": True,
                 }
             )
+
+        if self.load_errors:
+            result.append({"name": "_load_errors", "errors": self.load_errors})
         return result

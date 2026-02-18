@@ -43,8 +43,21 @@ class GenericPlugin(BasePlugin):
         merge_format = kwargs.get("merge_output_format") or "mp4"
 
         quality = kwargs.get("quality")
-        if quality:
-            fmt = f"bestvideo[height<={quality}]+bestaudio/best"
+        fps = kwargs.get("fps")
+
+        constraints = []
+        if quality and str(quality).strip().lower() not in {"", "best", "auto"}:
+            quality_digits = "".join(ch for ch in str(quality) if ch.isdigit())
+            if quality_digits:
+                constraints.append(f"height<={int(quality_digits)}")
+        if fps and str(fps).strip().lower() not in {"", "best", "auto"}:
+            fps_digits = "".join(ch for ch in str(fps) if ch.isdigit())
+            if fps_digits:
+                constraints.append(f"fps<={int(fps_digits)}")
+
+        if constraints:
+            selector = "[" + "][".join(constraints) + "]"
+            fmt = f"bestvideo{selector}+bestaudio/best{selector}/best"
 
         before_files = set(glob.glob(os.path.join(output_path, "*")))
 

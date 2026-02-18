@@ -2,14 +2,28 @@
     <div class="nav-container">
         <div class="nav-brand">
             <span class="nav-logo">🎬</span>
-            <span class="nav-title">AnimeKai Downloader</span>
+            <div>
+                <span class="nav-title">AnimeKai Downloader</span>
+                <div class="nav-subtitle">Realtime Anime Download Hub</div>
+            </div>
         </div>
         <div class="nav-links">
-            <a href="/dashboard" class="nav-link">📊 Dashboard</a>
-            <a href="/search" class="nav-link">🔍 Search</a>
-            <a href="/download" class="nav-link">📥 Download</a>
-            <a href="/library" class="nav-link">📚 Library</a>
+            <a href="/dashboard" class="nav-link" data-path="/dashboard">📊 Dashboard</a>
+            <a href="/search" class="nav-link" data-path="/search">🔍 Search</a>
+            <a href="/download" class="nav-link" data-path="/download">📥 Download</a>
+            <a href="/library" class="nav-link" data-path="/library">📚 Library</a>
             <a href="/logout" class="nav-link logout">🚪 Logout</a>
         </div>
     </div>
 </nav>
+<script>
+(() => {
+    const path = window.location.pathname || '/';
+    for (const link of document.querySelectorAll('.nav-link[data-path]')) {
+        const expected = link.dataset.path;
+        if (path === expected || path.startsWith(expected + '/')) {
+            link.classList.add('active');
+        }
+    }
+})();
+</script>
