@@ -295,7 +295,23 @@ class AnimeDownloader:
             if not sources:
                 return None
 
-            video_url = sources[0].get("file", "")
+            source_profiles = []
+            for source in sources:
+                file_url = source.get("file", "")
+                if not file_url:
+                    continue
+                source_profiles.append({
+                    "url": file_url,
+                    "quality": source.get("label") or source.get("quality") or "auto",
+                    "type": source.get("type") or "",
+                    "is_default": bool(source.get("default", False)),
+                })
+
+            if not source_profiles:
+                return None
+
+            default_source = next((s for s in source_profiles if s.get("is_default")), source_profiles[0])
+            video_url = default_source.get("url", "")
 
             # Extract subtitle tracks
             subtitle_tracks = []
@@ -309,11 +325,35 @@ class AnimeDownloader:
 
             return {
                 "video_url": video_url,
-                "subtitles": subtitle_tracks
+                "subtitles": subtitle_tracks,
+                "sources": source_profiles,
             }
         except Exception as e:
             self.log("ERROR", f"Error getting video data: {e}")
             return None
+
+    def build_ydlp_format_selector(self, quality: Optional[str] = None, fps: Optional[str] = None) -> str:
+        """Build a resilient yt-dlp format selector from quality/fps preferences."""
+        constraints = []
+        if quality and str(quality).strip().lower() not in {"", "best", "auto"}:
+            try:
+                quality_num = int(str(quality).lower().replace("p", "").strip())
+                constraints.append(f"height<={quality_num}")
+            except Exception:
+                pass
+
+        if fps and str(fps).strip().lower() not in {"", "best", "auto"}:
+            try:
+                fps_num = int(float(str(fps).lower().replace("fps", "").strip()))
+                constraints.append(f"fps<={fps_num}")
+            except Exception:
+                pass
+
+        if not constraints:
+            return "bestvideo+bestaudio/best"
+
+        selector = "[" + "][".join(constraints) + "]"
+        return f"bestvideo{selector}+bestaudio/best{selector}/best"
 
     def generate_episode_filename(self, anime_title: str, season_num: int, ep_id: str) -> str:
         """Generate proper episode filename"""
@@ -330,7 +370,8 @@ class AnimeDownloader:
         filename = re.sub(r'[<>:"/\\|?*]', "", filename)
         return filename
 
-    def download_with_ytdlp(self, url: str, output_file: str, episode_label: str, subtitles: List[Dict] = None) -> bool:
+    def download_with_ytdlp(self, url: str, output_file: str, episode_label: str, subtitles: List[Dict] = None,
+                            quality: Optional[str] = None, fps: Optional[str] = None) -> bool:
         """Download with yt-dlp, optionally embedding subtitles"""
         try:
             self.log("INFO", f"Downloading episode {episode_label} with yt-dlp")
@@ -339,6 +380,8 @@ class AnimeDownloader:
                 "yt-dlp",
                 url,
                 "-o", output_file,
+                "-f", self.build_ydlp_format_selector(quality, fps),
+                "--merge-output-format", "mp4",
                 "--no-warnings",
                 "--no-check-certificate",
                 "--concurrent-fragments", str(self.config["max_workers"]),
@@ -421,7 +464,8 @@ class AnimeDownloader:
             self.log("ERROR", f"yt-dlp error: {e}")
             return False
 
-    def download_episode(self, video_data: Dict[str, Any], output_file: str, episode_label: str) -> bool:
+    def download_episode(self, video_data: Dict[str, Any], output_file: str, episode_label: str,
+                         quality: Optional[str] = None, fps: Optional[str] = None) -> bool:
         """Download a single episode"""
         url = video_data["video_url"]
         subtitles = video_data.get("subtitles", [])
@@ -432,7 +476,7 @@ class AnimeDownloader:
             if attempt > 1:
                 self.log("INFO", f"Retry {attempt}/{self.config['max_retries']} for episode {episode_label}")
             
-            if self.download_with_ytdlp(url, output_file, episode_label, subtitles):
+            if self.download_with_ytdlp(url, output_file, episode_label, subtitles, quality=quality, fps=fps):
                 self.log("INFO", f"✅ Successfully downloaded episode {episode_label}")
                 return True
             
@@ -459,9 +503,44 @@ class AnimeDownloader:
         self.log("INFO", f"Merging {len(valid_files)} files into {merged_filename}")
 
         list_file = os.path.join(os.path.dirname(file_list[0]), "filelist_merge.txt")
+        normalized_files: List[str] = []
         try:
+            # Normalize every segment to CFR H.264/AAC before concat.
+            # This avoids jitter/stutter at boundaries when source segments have different
+            # timebases, fps mode (VFR/CFR), keyframe cadence, or audio parameters.
+            for idx, source_file in enumerate(valid_files, 1):
+                normalized = os.path.join(
+                    os.path.dirname(source_file),
+                    f".merge_norm_{idx:04d}.mp4",
+                )
+                normalize_cmd = [
+                    "ffmpeg",
+                    "-i", source_file,
+                    "-vf", "fps=30,format=yuv420p",
+                    "-af", "aresample=async=1:min_hard_comp=0.100000:first_pts=0",
+                    "-c:v", "libx264",
+                    "-preset", "medium",
+                    "-crf", "20",
+                    "-g", "60",
+                    "-keyint_min", "60",
+                    "-sc_threshold", "0",
+                    "-c:a", "aac",
+                    "-b:a", "192k",
+                    "-ar", "48000",
+                    "-ac", "2",
+                    "-movflags", "+faststart",
+                    "-y",
+                    "-loglevel", "error",
+                    normalized,
+                ]
+                result = subprocess.run(normalize_cmd, capture_output=True, text=True)
+                if result.returncode != 0 or not os.path.exists(normalized):
+                    self.log("ERROR", f"Normalization failed for {os.path.basename(source_file)}")
+                    return None
+                normalized_files.append(normalized)
+
             with open(list_file, "w", encoding="utf-8") as f:
-                for vf in valid_files:
+                for vf in normalized_files:
                     f.write(f"file '{os.path.abspath(vf)}'\n")
 
             cmd = [
@@ -469,9 +548,10 @@ class AnimeDownloader:
                 "-f", "concat",
                 "-safe", "0",
                 "-i", list_file,
-                "-c:v", "copy",
-                "-c:a", "copy",
-                "-c:s", "copy",
+                "-fflags", "+genpts",
+                "-vsync", "cfr",
+                "-c", "copy",
+                "-movflags", "+faststart",
                 "-y",
                 "-loglevel", "info",
                 merged_path,
@@ -494,3 +574,9 @@ class AnimeDownloader:
                     os.remove(list_file)
             except Exception:
                 pass
+            for nf in normalized_files:
+                try:
+                    if os.path.exists(nf):
+                        os.remove(nf)
+                except Exception:
+                    pass

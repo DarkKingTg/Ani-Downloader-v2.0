@@ -12,7 +12,7 @@ from app.plugins.base_plugin import BasePlugin
 from app.plugins.generic_plugin import GenericPlugin
 
 
-class AniKaiPlugin(BasePlugin):
+class AnimeKaiPlugin(BasePlugin):
     SITE_NAME = "AniKai.to"
     URL_PATTERNS = [
         r"^https?://(?:www\.)?anikai\.to/.*$",
@@ -266,7 +266,13 @@ class AniKaiPlugin(BasePlugin):
         os.makedirs(output_path, exist_ok=True)
         out_file = os.path.join(output_path, self._downloader.generate_episode_filename(title, 1, str(episode)))
 
-        ok = self._downloader.download_episode(video_data, out_file, str(episode))
+        ok = self._downloader.download_episode(
+            video_data,
+            out_file,
+            str(episode),
+            quality=kwargs.get("quality"),
+            fps=kwargs.get("fps"),
+        )
         if not ok:
             return {"success": False, "files": [], "error": "Download failed", "metadata": {}}
 

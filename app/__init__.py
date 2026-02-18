@@ -3,7 +3,7 @@ AnimeKai Downloader Application Package
 """
 from flask import Flask
 import os
-from flask_socketio import SocketIO
+from app.extensions import socketio
 
 def create_app():
     """Application factory pattern"""
@@ -24,8 +24,8 @@ def create_app():
     from app.utils import create_download_folder
     create_download_folder(app.config['DOWNLOAD_FOLDER'])
     
-    # Initialize SocketIO
-    socketio = SocketIO(app)
+    # Initialize extensions
+    socketio.init_app(app)
 
     # Register blueprints
     from app.routes.auth import auth_bp

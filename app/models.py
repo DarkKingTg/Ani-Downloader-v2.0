@@ -30,6 +30,13 @@ class DownloadJob:
         self.eta_formatted = None
         self.eta_seconds = None
 
+        # Download Doctor / recovery metadata
+        self.parent_job_id = None
+        self.retry_count = 0
+        self.recovery_plan = []
+        self.failure_reason = None
+        self.failure_category = None
+
     def add_log(self, level, message):
         """Add a log entry"""
         timestamp = datetime.now().strftime("%H:%M:%S")
@@ -71,6 +78,11 @@ class DownloadJob:
             "speed_formatted": self.speed_formatted,
             "eta_seconds": self.eta_seconds,
             "eta_formatted": self.eta_formatted,
+            "parent_job_id": self.parent_job_id,
+            "retry_count": self.retry_count,
+            "recovery_plan": self.recovery_plan,
+            "failure_reason": self.failure_reason,
+            "failure_category": self.failure_category,
             "start_time": self.start_time.isoformat(),
             "end_time": self.end_time.isoformat() if self.end_time else None
         }

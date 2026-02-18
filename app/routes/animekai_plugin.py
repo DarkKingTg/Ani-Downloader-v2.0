@@ -1,6 +1,5 @@
 """
-Anikai Plugin
-Handles search and download functionality for anikai.to
+AnimeKai route adapter (legacy plugin bridge).
 """
 
 import sys
@@ -13,7 +12,7 @@ from app.utils import Plugin
 from app.routes.download import run_download_job
 from flask import current_app
 
-class AnikaiPlugin(Plugin):
+class AnimeKaiPlugin(Plugin):
     def search(self, query: str):
         # Placeholder for search functionality
         return f"Searching for {query} on anikai.to"
@@ -22,5 +21,5 @@ class AnikaiPlugin(Plugin):
         try:
             run_download_job(job, download_folder)
         except Exception as e:
-            current_app.logger.error(f"AnikaiPlugin download error: {e}")
+            current_app.logger.error(f"AnimeKaiPlugin download error: {e}")
             raise
